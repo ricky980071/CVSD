@@ -1,0 +1,6 @@
+run file at 01_RTL
+chmod +x run.sh
+./run.sh 3(change testbench)
+
+
+source file at the outside, where tool.sh exist
