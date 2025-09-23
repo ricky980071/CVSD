@@ -16,7 +16,7 @@ module alu #(
     output                     o_out_valid,
     output        [DATA_W-1:0] o_data
 );
-
+genvar i;
 localparam S_IDLE = 3'd1;
 localparam S_LOAD  = 3'd2;
 
@@ -99,19 +99,27 @@ localparam MAC_FRAC_W = 20;
 localparam DATA_MAC_W = MAC_INT_W + MAC_FRAC_W;
 reg signed [DATA_MAC_W-1:0] acc_mac_next,
                             acc_mac_r,
-                            mul_mac_temp;
-                            
+                            mul_mac_temp,
+                            temp_gray,
+                            temp_tylr,
+                            temp_CPOP;
 
+    localparam signed R_6 = 16'b0000000010101011; // Q6.10
+    localparam signed R_120 = 16'b0000000000001001; // Q6.10
 //calculation logic
 always@(*) begin
     o_data_next=o_data_r;
     data_a_ext=$signed({data_a_r[DATA_W-1],data_a_r[DATA_W-1:0]});
     data_b_ext=$signed({data_b_r[DATA_W-1],data_b_r[DATA_W-1:0]});
     acc_mac_next=acc_mac_r;
-   
+    
     temp_sum=0;
     mul_mac_temp=0;
-    if(state_r==S_PROCESS)begin
+    temp_tylr=0;//talor
+    temp_gray=0;
+    // temp_LRCW=0;
+    temp_CPOP=0;
+    if(state_r ==S_PROCESS)begin
         case(inst_r)
             4'b0000: begin
                 temp_sum = data_a_ext + data_b_ext;
@@ -134,50 +142,46 @@ always@(*) begin
                 end
                 else o_data_next = data_a_r - data_b_r; // sub
             end
-            // 4'b0010: begin//MAC
-            //     mul_mac_temp = $signed(data_a_r) * $signed(data_b_r); //mult 6Q10*6Q10=12Q20
-            //     acc_mac_next = mul_mac_temp+acc_mac_r;
-            //     if($signed(acc_mac_next)>$signed(16'h7fff))begin//saturation
-            //         o_data_next = 16'h7fff;
-            //     end
-            //     else if ($signed(acc_mac_next)<$signed(16'h8000))begin//saturation
-            //         o_data_next = 16'h8000;
-            //     end
-            //     else o_data_next = $signed(acc_mac_next >>>(MAC_FRAC_W-FRAC_W))+acc_mac_next[FRAC_W-1];// sub   16Q20->6Q10
-
-            // end    
+             
             4'b0010: begin//MAC
-            mul_mac_temp = $signed(data_a_r) * $signed(data_b_r); //mult 6Q10*6Q10=12Q20
-            acc_mac_next = mul_mac_temp+acc_mac_r;
+                mul_mac_temp = $signed(data_a_r) * $signed(data_b_r); //mult 6Q10*6Q10=12Q20
+                acc_mac_next = mul_mac_temp+acc_mac_r;
+                if($signed(acc_mac_next)>$signed((32'h7fff_ffff)))begin//saturation
+                    o_data_next = 16'h7fff;
+                    acc_mac_next = 32'h7fff_ffff;
+                end
+                else if ($signed(acc_mac_next)<$signed(32'h8000_0000))begin//saturation
+                    o_data_next = 16'h8000;
+                    acc_mac_next = 32'h8000_0000;
+                end
+                else begin
+                    if($signed(acc_mac_next)>($signed({10'd0,16'h7fff,10'b0})))begin//saturation
+                        o_data_next = 16'h7fff;
+                    end
+                    else if ($signed(acc_mac_next)<$signed({10'b1111111111,16'h8000,10'b0}))begin//saturation
+                        o_data_next = 16'h8000;
+                    end         
+                    o_data_next = $signed(acc_mac_next >>>(MAC_FRAC_W-FRAC_W))+acc_mac_next[FRAC_W-1];// sub   16Q20->6Q10
+                end
+            end
+            4'b0011: begin // Taylor 
+                    temp_tylr = (data_a_r <<< (FRAC_W*5)) - ((data_a_r * data_a_r * data_a_r * R_6) <<< (FRAC_W*2)) + (data_a_r * data_a_r * data_a_r * data_a_r * data_a_r * R_120);
+                    o_data_next = (temp_tylr >> (FRAC_W*5)) + temp_tylr[(FRAC_W*5) - 1]; 
+                end
+            4'b0100: begin // Taylor Expansion of sin with order = 2
+                   for(i=0;i<DATA_W;i=i+1) begin
+                    if(i==DATA_W-1) temp_gray[DATA_W-1]=data_a_r[DATA_W-1];
+                    else temp_gray[i]=data_a_r[i+1]^data_a_r[i];
+                end
+                o_data_next = temp_gray;
+            end
+            4'b0101:begin
+                for(i=0;i<DATA_W;i=i+1) begin
+                    if(data_a_r[i]) temp_CPOP = temp_CPOP + 1;
+                end
+                o_data_next = {data_b_r[DATA_W-1-temp_CPOP:0],~data_b_r[DATA_W-1:temp_CPOP]};
+            end
             
-            // 詳細顯示MAC運算過程
-            $display("=== MAC Operation at time %0t ===", $time);
-            $display("Input data_a_r = %016b (%0d decimal)", data_a_r, $signed(data_a_r));
-            $display("Input data_b_r = %016b (%0d decimal)", data_b_r, $signed(data_b_r));
-            $display("Multiplication result = %036b (%0d decimal)", mul_mac_temp, $signed(mul_mac_temp));
-            $display("Previous accumulator  = %036b (%0d decimal)", acc_mac_r, $signed(acc_mac_r));
-            $display("New accumulator      = %036b (%0d decimal)", acc_mac_next, $signed(acc_mac_next));
-            
-            if($signed(acc_mac_next)>$signed(16'h7fff))begin//saturation
-                o_data_next = 16'h7fff;
-                $display("POSITIVE SATURATION: acc_mac_next > 0x7fff");
-                $display("Output saturated to  = %016b (0x%04h, %0d decimal)", o_data_next, o_data_next, $signed(o_data_next));
-            end
-            else if ($signed(acc_mac_next)<$signed(16'h8000))begin//saturation
-                o_data_next = 16'h8000;
-                $display("NEGATIVE SATURATION: acc_mac_next < 0x8000");
-                $display("Output saturated to  = %016b (0x%04h, %0d decimal)", o_data_next, o_data_next, $signed(o_data_next));
-            end
-            else begin
-                o_data_next = $signed(acc_mac_next >>>(MAC_FRAC_W-FRAC_W))+acc_mac_next[FRAC_W-1];// sub   16Q20->6Q10
-                $display("NO SATURATION - Normal scaling:");
-                $display("Right shift amount   = %0d bits", (MAC_FRAC_W-FRAC_W));
-                $display("Shifted result       = %036b (%0d decimal)", $signed(acc_mac_next >>>(MAC_FRAC_W-FRAC_W)), $signed(acc_mac_next >>>(MAC_FRAC_W-FRAC_W)));
-                $display("Rounding bit         = %01b", acc_mac_next[FRAC_W-1]);
-                $display("Final output         = %016b (0x%04h, %0d decimal)", o_data_next, o_data_next, $signed(o_data_next));
-            end
-            $display("=====================================");
-            end
         endcase
     end
 end
