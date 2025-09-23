@@ -17,12 +17,12 @@ module alu #(
     output        [DATA_W-1:0] o_data
 );
 
-local parameter S_IDLE = 2'd1;
-local parameter S_LOAD  = 2'd2;
+localparam S_IDLE = 3'd1;
+localparam S_LOAD  = 3'd2;
 
-local parameter S_PROCESS = 2'd3;
-local parameter S_OUTPUT = 2'd4;
-reg [1:0]=state_r,state_next;
+localparam S_PROCESS = 3'd3;
+localparam S_OUTPUT = 3'd4;
+reg [2:0]state_r,state_next;
 reg o_busy_r,o_out_valid_r,o_busy_next,o_out_valid_next;
 reg [DATA_W-1:0] o_data_r,o_data_next;
 
@@ -75,7 +75,7 @@ always@(*) begin
     // to remenber the last value, it will be a latch
     //if you assign, it will be a mux
     inst_next=inst_r;
-    if(state_r==S_LOAD && i_in_valid) begin
+    if(state_r == S_LOAD && i_in_valid) begin
         data_a_next=i_data_a;
         data_b_next=i_data_b;
         inst_next=i_inst;
@@ -100,12 +100,18 @@ always@(posedge i_clk or negedge i_rst_n) begin
         o_out_valid_r<=0;
         o_data_r<=0;
         state_r<=S_IDLE;
+        data_a_r<=0;
+        data_b_r<=0;
+        inst_r<=0;
     end
     else begin
         o_busy_r<=o_busy_next;
         o_out_valid_r<=o_out_valid_next;
         o_data_r<=o_data_next;
         state_r<=state_next;
+        data_a_r<=data_a_next;
+        data_b_r<=data_b_next;
+        inst_r<=inst_next;
     end
 end
 endmodule
