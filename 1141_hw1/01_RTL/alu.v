@@ -36,6 +36,7 @@ assign o_data = o_data_r;
 //state machine logic(o_data logic control by calculation) the rest flag logic control by state machine
 //stae using mealy machine
 always@(*) begin
+    integer i;
     state_next = state_r;
     o_busy_next = o_busy_r;
     o_out_valid_next = o_out_valid_r;
@@ -78,17 +79,18 @@ always@(*) begin
             o_out_valid_next = 1;
         end
         S_OUTPUT:begin
-            if(i_inst==4'b1001) begin
-                    if(cnt_r==4'd1)begin
-                        state_next = S_LOAD;
-                        o_busy_next = 0;
-                        o_out_valid_next = 0
-                    end
-                    else begin
-                        state_next = S_OUT;
+            if(cnt_r>4'd0) begin
+                    // if(cnt_r==4'd0)begin
+                    //     state_next = S_LOAD;
+                    //     o_busy_next = 0;
+                    //     o_out_valid_next = 0
+                    // end
+                    // else begin
+                        state_next = S_OUTPUT;
                         o_busy_next = 1;
                         o_out_valid_next = 1;
-                    end
+                        
+                    // end
 
             end
             else begin
@@ -101,6 +103,15 @@ always@(*) begin
 end
 reg signed [DATA_W-1:0] data_a_r,data_b_r,data_a_next,data_b_next;
 reg [INST_W-1:0] inst_r,inst_next;
+//matrix ouput
+always@(*) begin
+    if(state_r==S_OUTPUT)begin
+        o_data_next=matrix_r[cnt_r-1];
+    end
+    
+end
+
+
 //input data logic
 //without assign first if will be latch
 always@(*) begin
@@ -111,22 +122,31 @@ always@(*) begin
     // to remenber the last value, it will be a latch
     //if you assign, it will be a mux
     inst_next=inst_r;
+    
     if(state_r == S_LOAD && i_in_valid) begin
         data_a_next=i_data_a;
         data_b_next=i_data_b;
         inst_next=i_inst;
+        if(i_inst=4'b1001) begin
+            
+            matrix_next[cnt_r]=i_data_a;
+        end
+        else begin
+            for(i=0;i<8;i=i+1) begin
+            matrix_next[i]=matrix_r[i];
+            end
+        end
     end
     
 end
 reg [3:0] cnt_r,cnt_next;
 //cnt logic
 always@(*) begin
-    
     if(state_r == S_LOAD&&inst_r==4'b1001) begin
         cnt_next=cnt_r+1;
     end
     else if(state_r == S_PROCESS) begin
-        cnt_next=cnt_r;
+        cnt_next=cnt_r-1;
     end
     else if(state_r==S_OUT)begin
         cnt_next=cnt_r-1;
@@ -155,9 +175,12 @@ localparam signed R_120 = 16'b0000000000001001;
 reg CLZ_ctrl;
 reg [4:0] CLZ_count;
 reg [DATA_W-1:0] matched_seq;
+reg [DATA_W-1:0] matrix_next [0:7];
+reg [DATA_W-1:0] matrix_temp [0:7];
+reg [DATA_W-1:0] matrix_r [0:7];
 //calculation logic
 always@(*) begin
-    integer i;
+    integer i,j;
     o_data_next=o_data_r;
     data_a_ext=$signed({data_a_r[DATA_W-1],data_a_r[DATA_W-1:0]});
     data_b_ext=$signed({data_b_r[DATA_W-1],data_b_r[DATA_W-1:0]});
@@ -172,6 +195,9 @@ always@(*) begin
     matched_seq=0;
     // temp_LRCW=0;
     temp_CPOP=0;
+    for(i=0;i<8;i=i+1) begin
+            matrix_temp[i]=0;
+    end
     if(state_r ==S_PROCESS)begin
         case(inst_r)
             4'b0000: begin
@@ -255,10 +281,21 @@ always@(*) begin
                     end
                     else matched_seq[i] = 1'b0;
                 end
-            end
                 o_data_next = matched_seq;
+            end
+                
             4'b1001: begin//matrix
-                o_data_next = ~data_a_r + 1'b1; // two's complement
+                
+                
+                for(i=7;i>=0;i=i-1) begin
+                    for(j=0;j<8;j=j+1) begin
+                        matrix_temp[7-i][15-2*j:14-2*j]=matrix_r[j][2*i+1:2*i];
+                    end
+                end
+                for(i=7;i>=0;i=i-1) begin
+                    matrix_next[i]=matrix_temp[i];
+                end
+                o_data_next=matrix_next[cnt_r-1];
             end
         endcase
     end
@@ -266,6 +303,7 @@ end
 
 
 always@(posedge i_clk or negedge i_rst_n) begin
+    integer i;
     if(!i_rst_n) begin
         o_busy_r<=0;
         o_out_valid_r<=0;
@@ -288,6 +326,9 @@ always@(posedge i_clk or negedge i_rst_n) begin
         inst_r<=inst_next;
         acc_mac_r<=acc_mac_next;
         cnt_r<=cnt_next;
-    end
+        for(i=0;i<8;i=i+1) begin
+            matrix_r[i]<=matrix_next[i];
+        end
+    end 
 end
 endmodule
