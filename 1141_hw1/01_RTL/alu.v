@@ -16,7 +16,8 @@ module alu #(
     output                     o_out_valid,
     output        [DATA_W-1:0] o_data
 );
-genvar i;
+// genvar i; for outside always block
+
 localparam S_IDLE = 3'd1;
 localparam S_LOAD  = 3'd2;
 
@@ -46,9 +47,24 @@ always@(*) begin
         end
         S_LOAD:begin
             if(i_in_valid) begin 
-                state_next = S_PROCESS;
-                o_busy_next = 1;
-                o_out_valid_next = 0;
+                if(i_inst==4'b1001) begin
+                    if(cnt_r==4'd7)begin
+                        state_next = S_PROCESS;
+                        o_busy_next = 1;
+                        o_out_valid_next = 0
+                    end
+                    else begin
+                        state_next = S_LOAD;
+                        o_busy_next = 0;
+                        o_out_valid_next = 0;
+                    end
+
+                end
+                else begin
+                    state_next = S_PROCESS;
+                    o_busy_next = 1;
+                    o_out_valid_next = 0;
+                end
             end
             else begin                 
                 state_next = S_LOAD;
@@ -62,9 +78,24 @@ always@(*) begin
             o_out_valid_next = 1;
         end
         S_OUTPUT:begin
+            if(i_inst==4'b1001) begin
+                    if(cnt_r==4'd1)begin
+                        state_next = S_LOAD;
+                        o_busy_next = 0;
+                        o_out_valid_next = 0
+                    end
+                    else begin
+                        state_next = S_OUT;
+                        o_busy_next = 1;
+                        o_out_valid_next = 1;
+                    end
+
+            end
+            else begin
             state_next = S_LOAD;
             o_busy_next = 0;
             o_out_valid_next = 0;
+            end
         end
     endcase
 end
@@ -87,6 +118,22 @@ always@(*) begin
     end
     
 end
+reg [3:0] cnt_r,cnt_next;
+//cnt logic
+always@(*) begin
+    
+    if(state_r == S_LOAD&&inst_r==4'b1001) begin
+        cnt_next=cnt_r+1;
+    end
+    else if(state_r == S_PROCESS) begin
+        cnt_next=cnt_r;
+    end
+    else if(state_r==S_OUT)begin
+        cnt_next=cnt_r-1;
+    end
+    else cnt_next=0;
+end
+
 
 
 reg signed [DATA_W:0] data_a_ext,data_b_ext; //one more bit for overflow
@@ -101,13 +148,16 @@ reg signed [DATA_MAC_W-1:0] acc_mac_next,
                             acc_mac_r,
                             mul_mac_temp,
                             temp_gray,
-                            temp_tylr,
                             temp_CPOP;
-
-    localparam signed R_6 = 16'b0000000010101011; // Q6.10
-    localparam signed R_120 = 16'b0000000000001001; // Q6.10
+reg signed [DATA_W+FRAC_W*5-1:0] temp_tylr; //talor
+localparam signed R_6 = 16'b0000000010101011; 
+localparam signed R_120 = 16'b0000000000001001; 
+reg CLZ_ctrl;
+reg [4:0] CLZ_count;
+reg [DATA_W-1:0] matched_seq;
 //calculation logic
 always@(*) begin
+    integer i;
     o_data_next=o_data_r;
     data_a_ext=$signed({data_a_r[DATA_W-1],data_a_r[DATA_W-1:0]});
     data_b_ext=$signed({data_b_r[DATA_W-1],data_b_r[DATA_W-1:0]});
@@ -117,6 +167,9 @@ always@(*) begin
     mul_mac_temp=0;
     temp_tylr=0;//talor
     temp_gray=0;
+    CLZ_count=0;
+    CLZ_ctrl=0;
+    matched_seq=0;
     // temp_LRCW=0;
     temp_CPOP=0;
     if(state_r ==S_PROCESS)begin
@@ -165,10 +218,10 @@ always@(*) begin
                 end
             end
             4'b0011: begin // Taylor 
-                    temp_tylr = (data_a_r<<< (FRAC_W*5)) - ((data_a_r * data_a_r * data_a_r * R_6) <<< (FRAC_W*2)) + (data_a_r * data_a_r * data_a_r * data_a_r * data_a_r * R_120);
-                    o_data_next = (temp_tylr >> (FRAC_W*5)) + temp_tylr[(FRAC_W*5) - 1]; 
+                    temp_tylr = (data_a_r <<< (FRAC_W*5)) - ((data_a_r * data_a_r * data_a_r * R_6) <<< (FRAC_W*2)) + (data_a_r * data_a_r * data_a_r * data_a_r * data_a_r * R_120);
+                    o_data_next = (temp_tylr >>> (FRAC_W*5)) + temp_tylr[(FRAC_W*5) - 1]; 
                 end
-            4'b0100: begin // Taylor Expansion of sin with order = 2
+            4'b0100: begin 
                    for(i=0;i<DATA_W;i=i+1) begin
                     if(i==DATA_W-1) temp_gray[DATA_W-1]=data_a_r[DATA_W-1];
                     else temp_gray[i]=data_a_r[i+1]^data_a_r[i];
@@ -179,9 +232,34 @@ always@(*) begin
                 for(i=0;i<DATA_W;i=i+1) begin
                     if(data_a_r[i]) temp_CPOP = temp_CPOP + 1;
                 end
-                o_data_next = {data_b_r[DATA_W-1-temp_CPOP:0],~data_b_r[DATA_W-1:DATA_W-temp_CPOP]};
+                o_data_next = (data_b_r<<<temp_CPOP|(((~data_b_r)>>(DATA_W-temp_CPOP))));//shift left and right
             end
-
+            4'b0110: begin
+                o_data_next= (data_a_r >> data_b_r)|data_a_r<<(DATA_W-data_b_r); // shift left
+            end
+            4'b0111: begin
+                for (i=DATA_W-1;i>=0;i=i-1) begin
+                    if((!data_a_r[i])&&(!CLZ_ctrl)) begin
+                        CLZ_count=CLZ_count+1;
+                    end
+                    else begin
+                        CLZ_ctrl=1;
+                    end
+                end
+                o_data_next = CLZ_count;
+            end
+            4'b1000: begin
+                for (i=0;i<DATA_W-3;i=i+1) begin
+                    if(((data_a_r[i+3:i]^~data_b_r[DATA_W-1-i:DATA_W-4-i]))==0)begin
+                        matched_seq[i] = 1'b1;
+                    end
+                    else matched_seq[i] = 1'b0;
+                end
+            end
+                o_data_next = matched_seq;
+            4'b1001: begin//matrix
+                o_data_next = ~data_a_r + 1'b1; // two's complement
+            end
         endcase
     end
 end
@@ -198,6 +276,7 @@ always@(posedge i_clk or negedge i_rst_n) begin
         inst_r<=0;
        
         acc_mac_r<=0;
+        cnt_r<=0;
     end
     else begin
         o_busy_r<=o_busy_next;
@@ -208,6 +287,7 @@ always@(posedge i_clk or negedge i_rst_n) begin
         data_b_r<=data_b_next;
         inst_r<=inst_next;
         acc_mac_r<=acc_mac_next;
+        cnt_r<=cnt_next;
     end
 end
 endmodule
