@@ -165,7 +165,7 @@ always@(*) begin
                 end
             end
             4'b0011: begin // Taylor 
-                    temp_tylr = (data_a_r <<< (FRAC_W*5)) - ((data_a_r * data_a_r * data_a_r * R_6) <<< (FRAC_W*2)) + (data_a_r * data_a_r * data_a_r * data_a_r * data_a_r * R_120);
+                    temp_tylr = (data_a_r<<< (FRAC_W*5)) - ((data_a_r * data_a_r * data_a_r * R_6) <<< (FRAC_W*2)) + (data_a_r * data_a_r * data_a_r * data_a_r * data_a_r * R_120);
                     o_data_next = (temp_tylr >> (FRAC_W*5)) + temp_tylr[(FRAC_W*5) - 1]; 
                 end
             4'b0100: begin // Taylor Expansion of sin with order = 2
@@ -179,9 +179,9 @@ always@(*) begin
                 for(i=0;i<DATA_W;i=i+1) begin
                     if(data_a_r[i]) temp_CPOP = temp_CPOP + 1;
                 end
-                o_data_next = {data_b_r[DATA_W-1-temp_CPOP:0],~data_b_r[DATA_W-1:temp_CPOP]};
+                o_data_next = {data_b_r[DATA_W-1-temp_CPOP:0],~data_b_r[DATA_W-1:DATA_W-temp_CPOP]};
             end
-            
+
         endcase
     end
 end
