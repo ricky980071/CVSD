@@ -29,7 +29,10 @@ reg o_busy_r,
     o_busy_next,
     o_out_valid_next;
 reg [DATA_W-1:0] o_data_r,o_data_next;
-
+reg [3:0] cnt_r,cnt_next;
+reg [DATA_W-1:0] matrix_next [0:7];
+reg [DATA_W-1:0] matrix_temp [0:7];
+reg [DATA_W-1:0] matrix_r [0:7];
 assign o_busy = o_busy_r;
 assign o_out_valid = o_out_valid_r;
 assign o_data = o_data_r;
@@ -52,7 +55,7 @@ always@(*) begin
                     if(cnt_r==4'd7)begin
                         state_next = S_PROCESS;
                         o_busy_next = 1;
-                        o_out_valid_next = 0
+                        o_out_valid_next = 0;
                     end
                     else begin
                         state_next = S_LOAD;
@@ -115,6 +118,7 @@ end
 //input data logic
 //without assign first if will be latch
 always@(*) begin
+    integer i;
     data_a_next=data_a_r;
     data_b_next=data_b_r;
     //avoid latch, without this, the if block below if not hold, 
@@ -122,39 +126,34 @@ always@(*) begin
     // to remenber the last value, it will be a latch
     //if you assign, it will be a mux
     inst_next=inst_r;
-    
+    for(i=0;i<8;i=i+1) begin
+        matrix_next[i]=matrix_r[i];
+    end
     if(state_r == S_LOAD && i_in_valid) begin
         data_a_next=i_data_a;
         data_b_next=i_data_b;
         inst_next=i_inst;
-        if(i_inst=4'b1001) begin
-            
-            matrix_next[cnt_r]=i_data_a;
+        if(i_inst==4'b1001) begin
+            matrix_next[cnt_r]=data_a_r;
         end
-        else begin
-            for(i=0;i<8;i=i+1) begin
-            matrix_next[i]=matrix_r[i];
-            end
-        end
+      
     end
     
 end
-reg [3:0] cnt_r,cnt_next;
+
 //cnt logic
 always@(*) begin
-    if(state_r == S_LOAD&&inst_r==4'b1001) begin
+    if(state_r == S_LOAD&&inst_r==4'b1001&& i_in_valid) begin
         cnt_next=cnt_r+1;
     end
-    else if(state_r == S_PROCESS) begin
+    else if(state_r == S_PROCESS&&inst_r==4'b1001) begin
         cnt_next=cnt_r-1;
     end
-    else if(state_r==S_OUT)begin
+    else if(state_r==S_OUTPUT&&inst_r==4'b1001&&cnt_r>0)begin
         cnt_next=cnt_r-1;
     end
-    else cnt_next=0;
+    else cnt_next=cnt_r;
 end
-
-
 
 reg signed [DATA_W:0] data_a_ext,data_b_ext; //one more bit for overflow
 reg signed [DATA_W:0] temp_sum;
@@ -175,9 +174,8 @@ localparam signed R_120 = 16'b0000000000001001;
 reg CLZ_ctrl;
 reg [4:0] CLZ_count;
 reg [DATA_W-1:0] matched_seq;
-reg [DATA_W-1:0] matrix_next [0:7];
-reg [DATA_W-1:0] matrix_temp [0:7];
-reg [DATA_W-1:0] matrix_r [0:7];
+reg [DATA_W-1:0] right_shift_tempL,
+                 right_shift_tempR;
 //calculation logic
 always@(*) begin
     integer i,j;
@@ -185,7 +183,8 @@ always@(*) begin
     data_a_ext=$signed({data_a_r[DATA_W-1],data_a_r[DATA_W-1:0]});
     data_b_ext=$signed({data_b_r[DATA_W-1],data_b_r[DATA_W-1:0]});
     acc_mac_next=acc_mac_r;
-    
+    right_shift_tempL=0;
+    right_shift_tempR=0;//clear
     temp_sum=0;
     mul_mac_temp=0;
     temp_tylr=0;//talor
@@ -261,7 +260,9 @@ always@(*) begin
                 o_data_next = (data_b_r<<<temp_CPOP|(((~data_b_r)>>(DATA_W-temp_CPOP))));//shift left and right
             end
             4'b0110: begin
-                o_data_next= (data_a_r >> data_b_r)|data_a_r<<(DATA_W-data_b_r); // shift left
+                right_shift_tempL=(data_a_r<<(DATA_W-data_b_r));
+                right_shift_tempR=(data_a_r>>data_b_r);
+                o_data_next= (data_a_r >> data_b_r)|(data_a_r<<(DATA_W-data_b_r)); // shift right
             end
             4'b0111: begin
                 for (i=DATA_W-1;i>=0;i=i-1) begin
@@ -276,7 +277,7 @@ always@(*) begin
             end
             4'b1000: begin
                 for (i=0;i<DATA_W-3;i=i+1) begin
-                    if(((data_a_r[i+3:i]^~data_b_r[DATA_W-1-i:DATA_W-4-i]))==0)begin
+                    if(((data_a_r[i+3-:4]^data_b_r[DATA_W-1-i-:4]))==0)begin
                         matched_seq[i] = 1'b1;
                     end
                     else matched_seq[i] = 1'b0;
@@ -289,13 +290,17 @@ always@(*) begin
                 
                 for(i=7;i>=0;i=i-1) begin
                     for(j=0;j<8;j=j+1) begin
-                        matrix_temp[7-i][15-2*j:14-2*j]=matrix_r[j][2*i+1:2*i];
+                        matrix_temp[i][15-2*j-:2]=matrix_r[j][2*i+1-:2];
+                       
                     end
                 end
                 for(i=7;i>=0;i=i-1) begin
                     matrix_next[i]=matrix_temp[i];
                 end
-                o_data_next=matrix_next[cnt_r-1];
+                o_data_next=matrix_next[cnt_r];
+            end
+            default: begin
+                o_data_next=0;
             end
         endcase
     end
@@ -315,6 +320,9 @@ always@(posedge i_clk or negedge i_rst_n) begin
        
         acc_mac_r<=0;
         cnt_r<=0;
+        for(i=0;i<8;i=i+1) begin
+        matrix_r[i] <= 0;  
+        end
     end
     else begin
         o_busy_r<=o_busy_next;
