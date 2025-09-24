@@ -297,7 +297,7 @@ always@(*) begin
                 for(i=7;i>=0;i=i-1) begin
                     matrix_next[i]=matrix_temp[i];
                 end
-                o_data_next=matrix_next[cnt_r];
+                o_data_next=matrix_next[cnt_r-1];
             end
             default: begin
                 o_data_next=0;
