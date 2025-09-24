@@ -33,6 +33,8 @@ reg [3:0] cnt_r,cnt_next;
 reg [DATA_W-1:0] matrix_next [0:7];
 reg [DATA_W-1:0] matrix_temp [0:7];
 reg [DATA_W-1:0] matrix_r [0:7];
+reg signed [DATA_W-1:0] data_a_r,data_b_r,data_a_next,data_b_next;
+reg [INST_W-1:0] inst_r,inst_next;
 assign o_busy = o_busy_r;
 assign o_out_valid = o_out_valid_r;
 assign o_data = o_data_r;
@@ -51,7 +53,7 @@ always@(*) begin
         end
         S_LOAD:begin
             if(i_in_valid) begin 
-                if(i_inst==4'b1001) begin
+                if(i_inst==4'b1001|| inst_r == 4'b1001) begin
                     if(cnt_r==4'd7)begin
                         state_next = S_PROCESS;
                         o_busy_next = 1;
@@ -59,8 +61,7 @@ always@(*) begin
                     end
                     else begin
                         state_next = S_LOAD;
-                        if(cnt_r==4'd6) o_busy_next=1;
-                        else o_busy_next=0;
+                        o_busy_next=0;
                        
                         o_out_valid_next = 0;
                     end
@@ -84,37 +85,32 @@ always@(*) begin
             o_out_valid_next = 1;
         end
         S_OUTPUT:begin
-            if(cnt_r>4'd0) begin
-                    // if(cnt_r==4'd0)begin
-                    //     state_next = S_LOAD;
-                    //     o_busy_next = 0;
-                    //     o_out_valid_next = 0
-                    // end
-                    // else begin
-                        state_next = S_OUTPUT;
-                        o_busy_next = 1;
-                        o_out_valid_next = 1;
+             if (i_inst == 4'b1001 || inst_r == 4'b1001) begin
+                if(cnt_r == 7) begin
                         
-                    // end
-
+                            state_next = S_LOAD;
+                            o_busy_next = 0;
+                            o_out_valid_next = 0;
+                            
+                        // end
+                end
             end
             else begin
-            state_next = S_LOAD;
-            o_busy_next = 0;
-            o_out_valid_next = 0;
+            state_next = S_OUTPUT;
+            o_busy_next = 1;
+            o_out_valid_next = 1;
             end
         end
     endcase
 end
-reg signed [DATA_W-1:0] data_a_r,data_b_r,data_a_next,data_b_next;
-reg [INST_W-1:0] inst_r,inst_next;
+
 //matrix ouput
-always@(*) begin
-    if(state_r==S_OUTPUT)begin
-        o_data_next=matrix_r[cnt_r-1];
-    end
+// always@(*) begin
+//     if(state_r==S_OUTPUT)begin
+//         o_data_next=matrix_r[cnt_r-1];
+//     end
     
-end
+// end
 
 
 //input data logic
@@ -135,8 +131,10 @@ always@(*) begin
         data_a_next=i_data_a;
         data_b_next=i_data_b;
         inst_next=i_inst;
-        if(i_inst==4'b1001) begin
-            matrix_next[cnt_r]=data_a_r;
+        if(i_inst==4'b1001|| inst_r == 4'b1001) begin
+            for (i = 0; i < 8; i = i + 1) begin
+                matrix_next[i] = {matrix_r[i][DATA_W-3:0], i_data_a[15-2*i -: 2]}; // fill 2 bits from LSB to MSB
+            end
         end
       
     end
@@ -145,19 +143,28 @@ end
 
 //cnt logic
 always@(*) begin
-    if(state_r == S_LOAD&&inst_r==4'b1001&& (i_in_valid)) begin
-        cnt_next=cnt_r+1;
-    end
-    // if(state_r == S_LOAD&&inst_r==4'b1001&& cnt_r==7) begin
-    //     cnt_next=cnt_r+1;
-    // end
-    else if(state_r == S_PROCESS&&inst_r==4'b1001) begin
-        cnt_next=cnt_r-1;
-    end
-    else if(state_r==S_OUTPUT&&inst_r==4'b1001&&cnt_r>0)begin
-        cnt_next=cnt_r-1;
-    end
-    else cnt_next=cnt_r;
+   
+    cnt_next = cnt_r;
+    case (state_r)
+            S_LOAD: begin
+                if (i_inst == 4'b1001 || inst_r == 4'b1001) begin
+                    if (i_in_valid) begin
+                        if (cnt_r == 7) cnt_next = 0;
+                        else cnt_next = cnt_r + 1;
+                    end
+                    else cnt_next = cnt_r;
+                end
+                else cnt_next = 0;
+            end
+            S_PROCESS: cnt_next = 0;
+            S_OUTPUT: begin
+                if (i_inst == 4'b1001 || inst_r == 4'b1001) begin
+                    if (cnt_r == 7) cnt_next = 0;
+                    else cnt_next= cnt_r + 1;
+                end
+                else cnt_next = 0;
+            end
+        endcase
 end
 
 reg signed [DATA_W:0] data_a_ext,data_b_ext; //one more bit for overflow
@@ -293,22 +300,18 @@ always@(*) begin
             4'b1001: begin//matrix
                 
                 
-                for(i=7;i>=0;i=i-1) begin
-                    for(j=0;j<8;j=j+1) begin
-                        matrix_temp[i][15-2*j-:2]=matrix_r[j][2*i+1-:2];
-                       
-                    end
-                end
-                for(i=7;i>=0;i=i-1) begin
-                    matrix_next[i]=matrix_temp[i];
-                end
-                o_data_next=matrix_next[cnt_r-1];
+                o_data_next=matrix_next[0];
             end
             default: begin
                 o_data_next=0;
             end
         endcase
     end
+    else if (state_r == S_OUTPUT) begin
+            if (inst_r == 4'b1001) begin
+                o_data_next = matrix_r[cnt_r+1];
+            end
+        end
 end
 
 
