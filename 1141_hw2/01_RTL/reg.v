@@ -24,7 +24,9 @@ module reg#(
 );
 reg signed [DATA_WIDTH-1:0] int_reg_file [0:INT_REG_NUM-1];
 reg [DATA_WIDTH-1:0] fract_reg_file [0:FRAC_REG_NUM-1];
-reg [DATA_WIDTH-1:0] o_rs1_data, o_rs2_data;
+
+assign o_rs1_data = (i_rs1_dtyp==1'b0) ? int_reg_file[i_rs1_addr] : fract_reg_file[i_rs1_addr];
+assign o_rs2_data = (i_rs2_dtyp==1'b0) ? int_reg_file[i_rs2_addr] : fract_reg_file[i_rs2_addr];
 
 integer i;
 always @(posedge i_clk or negedge i_rst_n) begin
