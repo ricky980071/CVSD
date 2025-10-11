@@ -1,0 +1,9 @@
+`define INT_ADD 4'd0
+`define INT_SUB 4'd1
+`define INT_SLT 4'd2
+`define INT_SRL 4'd3
+`define FRACT_FSUB 4'd4
+`define FRACT_FMUL 4'd5
+`define FRACT_FCVTWS 4'd6
+`define FRACT_FCLASS 4'd7
+`define NOP 4'd8
