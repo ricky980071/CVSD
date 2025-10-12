@@ -25,7 +25,7 @@ reg [DATA_WIDTH-1:0] alu_out, alu_out_temp;
 reg invalid_flag;
 assign o_alu_out = alu_out;
 assign o_invalid_flag = invalid_flag;
-assign o_less_flag = alu_out[DATA_WIDTH-1];
+assign o_less_flag = alu_out;
 assign o_zero_flag = (alu_out == 0) ? 1'b1 : 1'b0;
 
 always @(*) begin
