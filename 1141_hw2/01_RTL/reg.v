@@ -1,4 +1,4 @@
-module reg#(
+module register#(
     parameter DATA_WIDTH = 32,
     parameter ADDR_WIDTH = 5,
     parameter FRAC_REG_NUM=32,
@@ -10,7 +10,7 @@ module reg#(
     input                   i_we,       // 写使能，高电平有效
 `   input  [ADDR_WIDTH-1:0] i_w_addr,     // 写入reg地址
 `   input  [DATA_WIDTH-1:0] i_w_data,     // 写入regdata
-    input                   i_w_data_type,
+    input                   i_w_data_typ,
 
     input  [ADDR_WIDTH-1:0] i_rs1_addr,     // 读出地址
     input  [ADDR_WIDTH-1:0] i_rs2_addr,     // 读出地址
@@ -40,7 +40,7 @@ always @(posedge i_clk or negedge i_rst_n) begin
     end
     else begin
         if (i_we) begin
-            if (i_w_data_type==1'b0) begin // int
+            if (i_w_data_typ==1'b0) begin // int
                 int_reg_file[i_w_addr] <= i_w_data;
             end
             else begin // fract

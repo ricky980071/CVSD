@@ -10,17 +10,18 @@
 
 module alu #(
     parameter DATA_WIDTH = 32
-)(
-    input  [DATA_WIDTH-1:0] i_alu_in1,      // 第一个操作数
-    input  [DATA_WIDTH-1:0] i_alu_in2,      // 第二个操作数
-    input  [3:0]            i_alu_ctrl,     // ALU 控制信号
-    output [DATA_WIDTH-1:0] o_alu_out,  // ALU 输出
+)(  
     output                  o_zero_flag,     // 零标志位
     output                  o_invalid_flag,
     output                  o_less_flag
+    input  [DATA_WIDTH-1:0] i_alu_rs1,      // 第一个操作数
+    input  [DATA_WIDTH-1:0] i_alu_rs2,      // 第二个操作数
+    input  [3:0]            i_alu_ctrl,     // ALU 控制信号
+    output [DATA_WIDTH-1:0] o_alu_out,  // ALU 输出
+
 );
 
-// all combinational block
+
 reg [DATA_WIDTH-1:0] alu_out, alu_out_temp;
 reg invalid_flag;
 assign o_alu_out = alu_out;
@@ -33,53 +34,53 @@ always @(*) begin
     case (i_alu_ctrl)
         `INT_ADD: begin
             
-            if((alu_out!=i_alu_in1[DATA_WIDTH-1])&&(i_alu_in1[DATA_WIDTH-1]==i_alu_in2[DATA_WIDTH-1])) begin
-                invalid_flag = 1'b1; // overflow
+            if((alu_out!=i_alu_rs1[DATA_WIDTH-1])&&(i_alu_rs1[DATA_WIDTH-1]==i_alu_rs2[DATA_WIDTH-1])) begin
+                invalid_flag = 1'b1; 
                 alu_out = 32'b0;
             end
-            else alu_out = $signed(i_alu_in1) + $signed(i_alu_in2);
+            else alu_out = $signed(i_alu_rs1) + $signed(i_alu_rs2);
         end
         `INT_SUB: begin
-            if((alu_out!=i_alu_in1[DATA_WIDTH-1])&&(i_alu_in1[DATA_WIDTH-1]!=i_alu_in2[DATA_WIDTH-1])) begin
-                invalid_flag = 1'b1; // overflow
+            if((alu_out!=i_alu_rs1[DATA_WIDTH-1])&&(i_alu_rs1[DATA_WIDTH-1]!=i_alu_rs2[DATA_WIDTH-1])) begin
+                invalid_flag = 1'b1; 
                 alu_out = 32'b0;
             end
-            else alu_out = $signed(i_alu_in1) - $signed(i_alu_in2);
+            else alu_out = $signed(i_alu_rs1) - $signed(i_alu_rs2);
         end
         `INT_SLT: begin
-            alu_out = (i_alu_in1 < i_alu_in2) ? 32'd1 : 32'd0;
+            alu_out = (i_alu_rs1 < i_alu_rs2) ? 32'd1 : 32'd0;
         end
         `INT_SRL: begin
-            alu_out = i_alu_in1 >> i_alu_in2[4:0];
+            alu_out = i_alu_rs1 >> i_alu_rs2[4:0];
         end
         `FRACT_FSUB: begin
-            // alu_out_temp = $realtobits($bitstoreal(i_alu_in1) - $bitstoreal(i_alu_in2));
+            // alu_out_temp = $realtobits($bitstoreal(i_alu_rs1) - $bitstoreal(i_alu_rs2));
             // alu_out = alu_out_temp;
-            // if ($bitstoreal(i_alu_in1) == $bitstoreal(i_alu_in2)) begin
+            // if ($bitstoreal(i_alu_rs1) == $bitstoreal(i_alu_rs2)) begin
             //     alu_out = 32'b0; // +0
             // end
-            // if ($bitstoreal(i_alu_in1) == 32'h7f800000 && $bitstoreal(i_alu_in2) == 32'h7f800000) begin
+            // if ($bitstoreal(i_alu_rs1) == 32'h7f800000 && $bitstoreal(i_alu_rs2) == 32'h7f800000) begin
             //     invalid_flag = 1'b1; // inf - inf = NaN
             // end
-            // if ($bitstoreal(i_alu_in1) == 32'hff800000 && $bitstoreal(i_alu_in2) == 32'hff800000) begin
+            // if ($bitstoreal(i_alu_rs1) == 32'hff800000 && $bitstoreal(i_alu_rs2) == 32'hff800000) begin
             //     invalid_flag = 1'b1; // -inf - (-inf) = NaN
             // end
-            // if (($bitstoreal(i_alu_in1) == 32'h7f800000 && $bitstoreal(i_alu_in2) == 32'hff800000) ||
-            //     ($bitstoreal(i_alu_in1) == 32'hff800000 && $bitstoreal(i_alu_in2) == 32'h7f800000)) begin
-            //     alu_out = i_alu_in1; // inf - (-inf) = inf, -inf - inf = -inf
+            // if (($bitstoreal(i_alu_rs1) == 32'h7f800000 && $bitstoreal(i_alu_rs2) == 32'hff800000) ||
+            //     ($bitstoreal(i_alu_rs1) == 32'hff800000 && $bitstoreal(i_alu_rs2) == 32'h7f800000)) begin
+            //     alu_out = i_alu_rs1; // inf - (-inf) = inf, -inf - inf = -inf
             // end
         end
         `FRACT_FMUL: begin
-            // alu_out_temp = $realtobits($bitstoreal(i_alu_in1) * $bitstoreal(i_alu_in2));
+            // alu_out_temp = $realtobits($bitstoreal(i_alu_rs1) * $bitstoreal(i_alu_rs2));
             // alu_out = alu_out_temp;
-            // if ($bitstoreal(i_alu_in1) == 32'h7f800000 && $bitstoreal(i_alu_in2) == 32'h7f800000) begin
+            // if ($bitstoreal(i_alu_rs1) == 32'h7f800000 && $bitstoreal(i_alu_rs2) == 32'h7f800000) begin
             //     invalid_flag = 1'b1; // inf * inf = NaN
             // end
-            // if ($bitstoreal(i_alu_in1) == 32'hff800000 && $bitstoreal(i_alu_in2) == 32'hff800000) begin
+            // if ($bitstoreal(i_alu_rs1) == 32'hff800000 && $bitstoreal(i_alu_rs2) == 32'hff800000) begin
             //     invalid_flag = 1'b1; // -inf * -inf = NaN
             // end
-            // if (($bitstoreal(i_alu_in1) == 32'h7f800000 && $bitstoreal(i_alu_in2) == 32'hff800000) ||
-            //     ($bitstoreal(i_alu_in1) == 32'hff800000 && $bitstoreal(i_alu_in2) == 32'h7f800000)) begin
+            // if (($bitstoreal(i_alu_rs1) == 32'h7f800000 && $bitstoreal(i_alu_rs2) == 32'hff800000) ||
+            //     ($bitstoreal(i_alu_rs1) == 32'hff800000 && $bitstoreal(i_alu_rs2) == 32'h7f800000)) begin
             //     alu_out = 32'h7fc00000; // inf * -inf = -inf, -inf * inf = inf
             // end
         end
