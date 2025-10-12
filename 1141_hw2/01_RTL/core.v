@@ -54,10 +54,11 @@ module core #( // DO NOT MODIFY INTERFACE!!!
     assign rs1_addr = i_rdata_r[19:15];
     assign rs2_addr = i_rdata_r[24:20];
 
-    reg [DATA_WIDTH-1:0] imm_r, imm_w;
+    reg [DATA_WIDTH-1:0] imm_r, imm_next;
     assign imm = imm_r;
 
     wire [2:0] status_result, status_result_next;
+    assign o_status = status_result;
     wire alu_zero, alu_less, alu_invalid;
     
     reg signed[DATA_WIDTH-1:0] pc_next, pc_r;
@@ -76,7 +77,7 @@ module core #( // DO NOT MODIFY INTERFACE!!!
         .i_alu_result     (alu_result),
         .i_alu_invalid    (alu_invalid),
         .i_opcode         (opcode),
-        .o_status         (status_result)
+        .o_status         (status_result_next)
     );
     
     wire ctrl_branch, 
@@ -184,12 +185,37 @@ module core #( // DO NOT MODIFY INTERFACE!!!
     );
     assign reg_write_data = (ctrl_mem_to_reg) ? i_rdata : alu_result;
 
+
+reg [data_WIDTH-1:0] jair_temp;
+
+always@(*) begin
+    pc_next = pc_r;
+    jair_temp=0;
+   if(state_r==S_WBACK) begin
+        if(ctrl_branch==1)begin
+            if (ctrl_branch) begin
+                    if ((func3 == `FUNCT3_BEQ && alu_zero) || (func3 == `FUNCT3_BLT && alu_less)) begin
+                        pc_next = pc_r + imm_r; 
+                    end else if (opcode == `OP_JALR) begin
+                        
+                        jair_temp=($signed(registers_rs1_data) + imm_r); 
+                        pc_next = {jair_temp[DATA_WIDTH-1:1], 1'b0};
+                    end else begin
+                        pc_next = pc_r + 4; 
+                    end
+                end else begin
+                    pc_next = pc_r + 4; 
+                end
+        end
+   end
+end
+
     always @(*) begin
         state_next = state_r;
-        pc_next = pc_r;
+
         fetech_count_next = fetech_count_r;
         o_addr_next = o_addr_r;
-        o_wdata_next = o_wdata_r;
+
         i_rdata_next = i_rdata_r;
         o_we_next = o_we_r;
         operation_count_next = operation_count_r;
@@ -199,6 +225,11 @@ module core #( // DO NOT MODIFY INTERFACE!!!
                 operation_count_next = 2'd0;
                 state_next = S_FETCH_INST;
                 pc_next = 0;
+
+                o_addr_next = 0;
+                o_wdata_next = 0;
+                o_we_next = 0;
+
             end
             S_FETCH_INST: begin
                 if (fetech_count_r == 2'd0) begin
@@ -213,13 +244,16 @@ module core #( // DO NOT MODIFY INTERFACE!!!
                     i_rdata_next = i_rdata;
                 end
                 
+                o_addr_next = pc_r;
+                o_wdata_next = 0;
+                o_we_next = 0;
             end
             S_DECODE_INST: begin
                 state_next = S_OPERATION;
                 operation_count_next = 2'd0;   
             end
             S_OPERATION: begin
-                 if (opcode_r == `OP_LW || opcode_r == `OP_FLW) begin
+                 if (opcode == `OP_LW || opcode == `OP_FLW) begin
                     if (operation_count_r == 1) begin
                         state_next = S_WBACK;
                         fetech_count_next = 2'd0;
@@ -236,12 +270,35 @@ module core #( // DO NOT MODIFY INTERFACE!!!
                     fetech_count_next = 2'd0;
                 end
 
+                if (status_result == `INVALID_TYPE) begin
+                    addr_next = o_addr_r;
+                    o_wdata_next = o_wdata_r;
+                    o_we_next = 0;
+                end else if (ctrl_mem_read && (operation_count_r == 0)) begin
+                    o_addr_next = alu_result; // data memory
+                    o_wdata_next = 0;
+                    o_we_next = 0;
+                end else if (ctrl_mem_write) begin
+                    o_addr_next = alu_result; // data memory
+                    o_wdata_next = rs2_data;
+                    o_we_next = 1;
+                end else begin
+                    o_addr_next = pc_r;
+                    o_wdata_next = 0;
+                    o_we_next = 0;
+                end
+
             end
 
             S_WBACK: begin
                 state_next = S_FETCH_INST;
                 operation_count_next = 2'd0;
                 fetech_count_next = 2'd0;
+
+                o_addr_next = pc_r;
+                o_wdata_next = 0;
+                o_we_next = 0;
+
             end
 
             default: begin
@@ -258,8 +315,8 @@ module core #( // DO NOT MODIFY INTERFACE!!!
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
             state_r <= S_IDLE;
-            pc_r <= 0;
-            status <= status_result;
+            pc_r <= 0;//
+            status_result<=0;
             fetech_count_r <= 2'd0;
             operation_count_r <= 2'd0;
             o_addr_r <= 0;
@@ -267,6 +324,7 @@ module core #( // DO NOT MODIFY INTERFACE!!!
             i_rdata_r <= 0;
             o_we_r <= 1'b0;
             status_valid_r <= 1'b0;
+            imm_r <= 0;
         end
         else begin
             state_r <= state_next;
@@ -276,11 +334,11 @@ module core #( // DO NOT MODIFY INTERFACE!!!
             o_wdata_r <= o_wdata_next;
             i_rdata_r <= i_rdata_next;
             o_we_r <= o_we_next;
-            status_next <= status_result;
+            status_result <= status_result_next;
             operation_count_r <= operation_count_next;
             fetech_count_r<=fetech_count_next;
             status_valid_r <= status_valid_next;
-
+            imm_r <= imm_next;
         end
     end
 // ---------------------------------------------------------------------------
